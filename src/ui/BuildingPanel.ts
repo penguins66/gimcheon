@@ -12,6 +12,8 @@ export class BuildingPanel {
     container: HTMLElement,
     private onUpgrade: (id: string) => void,
     private onBack: () => void,
+    private onHatcherySelect?: () => void,   // 부화장: 투입할 유닛 선택 모드
+    private onHatcheryRetrieve?: () => void, // 부화장: 슬롯 유닛 회수
   ) {
     this.el = document.createElement('div');
     this.el.className = 'panel building-panel';
@@ -44,7 +46,7 @@ export class BuildingPanel {
     const isMax    = bState.unlocked && bState.level >= bDef.levels.length;
     const curLevel = bState.level;
     const curDef   = bDef.levels[curLevel - 1];
-    const nextDef  = bDef.levels[curLevel]; // undefined if max
+    const nextDef  = bDef.levels[curLevel];
     const cost     = upgradeCost(s, id);
     const affordable = canUpgrade(s, id);
 
@@ -56,7 +58,6 @@ export class BuildingPanel {
       `</div>`;
 
     if (isLocked) {
-      // 해금 섹션
       html +=
         `<div class="bp-section">` +
           `<p class="bp-desc">${bDef.summary}</p>` +
@@ -68,7 +69,6 @@ export class BuildingPanel {
           `${!affordable ? `<p class="bp-lack">코인 부족 (보유: ${s.coins}💰)</p>` : ''}` +
         `</div>`;
     } else if (isMax) {
-      // 최대 레벨
       html +=
         `<div class="bp-section">` +
           `<p class="bp-cur-label">현재 효과</p>` +
@@ -76,9 +76,8 @@ export class BuildingPanel {
           `<p class="bp-max-badge">✦ 최대 레벨 달성</p>` +
         `</div>`;
 
-      if (id === 'hatchery') html += this.hatcheryNote(s);
+      if (id === 'hatchery') html += this.hatcherySection(s);
     } else {
-      // 업그레이드 가능
       html +=
         `<div class="bp-section">` +
           `<p class="bp-cur-label">현재 효과 (Lv.${curLevel})</p>` +
@@ -92,7 +91,7 @@ export class BuildingPanel {
           `${!affordable ? `<p class="bp-lack">코인 부족 (보유: ${s.coins}💰)</p>` : ''}` +
         `</div>`;
 
-      if (id === 'hatchery') html += this.hatcheryNote(s);
+      if (id === 'hatchery') html += this.hatcherySection(s);
     }
 
     this.el.innerHTML = html;
@@ -100,29 +99,54 @@ export class BuildingPanel {
     this.el.querySelector('#bp-back')!.addEventListener('click', this.onBack);
     const upgBtn = this.el.querySelector('#bp-upg');
     if (upgBtn) upgBtn.addEventListener('click', () => this.onUpgrade(id));
+
+    // 부화장 버튼 이벤트
+    if (id === 'hatchery') {
+      this.el.querySelector('#hatch-select')?.addEventListener('click', () => {
+        this.onHatcherySelect?.();
+      });
+      this.el.querySelector('#hatch-retrieve')?.addEventListener('click', () => {
+        this.onHatcheryRetrieve?.();
+      });
+    }
   }
 
-  private hatcheryNote(s: PlayerState): string {
-    const queue = s.hatcheryQueue ?? [];
-    if (queue.length === 0) {
-      return `<div class="bp-section bp-note">` +
-        `<p>📝 사용법</p>` +
-        `<p>준비기간 중 같은 종류 유닛 2기를 배치하면<br>다음 준비기간 시작 시 복제체 1기가 무료 추가됩니다.</p>` +
-      `</div>`;
+  // ── 부화장 섹션 ────────────────────────────────────────────────────────
+  private hatcherySection(s: PlayerState): string {
+    const slot = s.hatcherySlot;
+
+    if (!slot) {
+      // 슬롯 비어있음 — 유닛 선택 버튼
+      return `
+        <div class="bp-section bp-note">
+          <p style="font-weight:600;margin-bottom:6px">🥚 부화장 슬롯 — 비어있음</p>
+          <p style="color:var(--muted);font-size:12px;margin-bottom:10px">
+            유닛 1기를 투입하면 다음 전투 후 HP·ATK·DEF +20% 돌연변이로 귀환합니다.
+          </p>
+          <button class="bp-upg-btn" id="hatch-select">보드에서 유닛 투입</button>
+        </div>`;
     }
-    const items = queue
-      .map((defId) => {
-        try {
-          const def = getUnit(defId);
-          return `${def.visual.emoji ?? ''} ${def.name}`;
-        } catch {
-          return defId;
-        }
-      })
-      .join(' · ');
-    return `<div class="bp-section bp-note bp-note-active">` +
-      `<p>⏳ 다음 준비기간에 복제 예정</p>` +
-      `<p>${items}</p>` +
-    `</div>`;
+
+    // 슬롯 사용 중 — 부화 중인 유닛 정보 표시
+    let unitName = slot.defId;
+    let unitEmoji = '';
+    try {
+      const def = getUnit(slot.defId);
+      unitName  = def.name;
+      unitEmoji = def.visual.emoji ?? '';
+    } catch { /**/ }
+
+    const nextLv = slot.mutationLevel + 1;
+    return `
+      <div class="bp-section bp-note bp-note-active">
+        <p style="font-weight:600;margin-bottom:6px">⏳ 부화 중</p>
+        <p style="font-size:14px;margin-bottom:4px">${unitEmoji} ${unitName}</p>
+        <p style="color:var(--muted);font-size:12px;margin-bottom:10px">
+          다음 전투 후 <b>돌연변이 Lv.${nextLv}</b> (+${nextLv * 20}% 능력치)로 귀환
+        </p>
+        <button class="bp-upg-btn" id="hatch-retrieve" style="background:#555">
+          유닛 회수 (돌연변이 취소)
+        </button>
+      </div>`;
   }
 }

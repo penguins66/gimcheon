@@ -11,23 +11,27 @@ export class GridRenderer {
   private oy = 0;
   hoverCell: number | null = null;
 
+  /** 현재 활성 플레이어의 보드 (배치 가능 구역, 호버 체크에 사용) */
+  board: Board;
+  /** 상대 플레이어의 보드 (읽기 전용으로 렌더링만 함, null=1P모드) */
+  secondaryBoard: Board | null = null;
+
   constructor(
     private canvas: HTMLCanvasElement,
     private grid: Grid,
-    private board: Board,
+    board: Board,
   ) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2D 컨텍스트를 가져올 수 없습니다.');
     this.ctx = ctx;
+    this.board = board;
   }
 
-  // CSS 크기를 기반으로 layout 값(cell/ox/oy) + canvas 물리 크기를 갱신.
-  // draw()와 pixelToCell()에서 canvas가 stale 상태면 자동 호출됨.
   resize(): void {
     const dpr = window.devicePixelRatio || 1;
     const rect = this.canvas.getBoundingClientRect();
     const w = rect.width, h = rect.height;
-    if (w <= 0 || h <= 0) return; // 아직 레이아웃 미완성 — 스킵
+    if (w <= 0 || h <= 0) return;
 
     const newW = Math.max(1, Math.round(w * dpr));
     const newH = Math.max(1, Math.round(h * dpr));
@@ -42,7 +46,6 @@ export class GridRenderer {
     this.oy   = Math.floor((h - this.cell * this.grid.rows) / 2);
   }
 
-  // canvas 크기가 CSS와 다를 경우 자동 resize — stale layout 방어
   private ensureLayout(): void {
     const dpr = window.devicePixelRatio || 1;
     const rect = this.canvas.getBoundingClientRect();
@@ -69,11 +72,20 @@ export class GridRenderer {
     const w = rect.width, h = rect.height;
     ctx.clearRect(0, 0, w, h);
 
+    // ── 셀 배경 ─────────────────────────────────────────────────────────
     for (let row = 0; row < grid.rows; row++) {
       for (let col = 0; col < grid.cols; col++) {
         const x = ox + col * cell;
         const y = oy + row * cell;
-        ctx.fillStyle = grid.isPlayerZone(row) ? '#15242e' : '#251722';
+
+        // 활성 보드의 배치 구역은 더 밝게
+        const inActiveZone = this.board.isInZone(row);
+        const inSecondZone = this.secondaryBoard ? this.secondaryBoard.isInZone(row) : false;
+
+        if (inActiveZone)       ctx.fillStyle = '#15242e';
+        else if (inSecondZone)  ctx.fillStyle = '#2a1520'; // 상대 진영 (약간 붉게)
+        else                    ctx.fillStyle = '#1a1a28';
+
         ctx.fillRect(x, y, cell, cell);
         ctx.strokeStyle = '#2b3b46';
         ctx.lineWidth = 1;
@@ -81,6 +93,7 @@ export class GridRenderer {
       }
     }
 
+    // ── 중앙선 ───────────────────────────────────────────────────────────
     const midY = oy + (grid.rows - grid.playerRows) * cell;
     ctx.strokeStyle = '#577794';
     ctx.lineWidth = 2;
@@ -89,6 +102,7 @@ export class GridRenderer {
     ctx.lineTo(ox + grid.cols * cell, midY);
     ctx.stroke();
 
+    // ── 호버 강조 ────────────────────────────────────────────────────────
     if (this.hoverCell !== null) {
       const { col, row } = grid.coord(this.hoverCell);
       const x = ox + col * cell;
@@ -101,37 +115,47 @@ export class GridRenderer {
       ctx.strokeRect(x + 1, y + 1, cell - 2, cell - 2);
     }
 
-    for (const { cellId, units } of this.board.allPlacements()) {
-      const { col, row } = grid.coord(cellId);
-      const cx0 = ox + col * cell + cell / 2;
-      const cy0 = oy + row * cell + cell / 2;
-      const n = units.length;
+    // ── 유닛 렌더링 (활성 보드 + 보조 보드) ──────────────────────────────
+    const allBoards: Array<{ b: Board; owner: 0 | 1 }> = [
+      { b: this.board, owner: this.board.placerOwner },
+    ];
+    if (this.secondaryBoard) {
+      allBoards.push({ b: this.secondaryBoard, owner: this.secondaryBoard.placerOwner });
+    }
 
-      units.forEach((pu, i) => {
-        const def = getUnit(pu.defId);
-        let dx = 0, dy = 0;
+    for (const { b, owner } of allBoards) {
+      for (const { cellId, units } of b.allPlacements()) {
+        const { col, row } = grid.coord(cellId);
+        const cx0 = ox + col * cell + cell / 2;
+        const cy0 = oy + row * cell + cell / 2;
+        const n = units.length;
+
+        units.forEach((pu, i) => {
+          const def = getUnit(pu.defId);
+          let dx = 0, dy = 0;
+          if (n > 1) {
+            const spread = cell * 0.2;
+            const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
+            dx = Math.cos(ang) * spread;
+            dy = Math.sin(ang) * spread;
+          }
+          const baseR = Math.min(cell * def.radius, cell * 0.42);
+          const r = n > 1 ? baseR * 0.78 : baseR;
+          drawUnitToken(ctx, def, cx0 + dx, cy0 + dy, r, owner);
+        });
+
         if (n > 1) {
-          const spread = cell * 0.2;
-          const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
-          dx = Math.cos(ang) * spread;
-          dy = Math.sin(ang) * spread;
+          const bx = cx0 + cell * 0.32, by = cy0 - cell * 0.32;
+          ctx.beginPath();
+          ctx.fillStyle = 'rgba(8,12,16,0.85)';
+          ctx.arc(bx, by, cell * 0.15, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.font = `bold ${Math.floor(cell * 0.19)}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(String(n), bx, by);
         }
-        const baseR = Math.min(cell * def.radius, cell * 0.42);
-        const r = n > 1 ? baseR * 0.78 : baseR;
-        drawUnitToken(ctx, def, cx0 + dx, cy0 + dy, r, 0);
-      });
-
-      if (n > 1) {
-        const bx = cx0 + cell * 0.32, by = cy0 - cell * 0.32;
-        ctx.beginPath();
-        ctx.fillStyle = 'rgba(8,12,16,0.85)';
-        ctx.arc(bx, by, cell * 0.15, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.font = `bold ${Math.floor(cell * 0.19)}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(String(n), bx, by);
       }
     }
   }

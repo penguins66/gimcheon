@@ -1,6 +1,11 @@
 import { CONFIG } from '../config';
 import { BUILDING_DEFS } from '../data/buildings';
 
+export interface HatcheryEntry {
+  defId:         string;
+  mutationLevel: number; // 다음 레벨로 부화된 돌연변이
+}
+
 export interface BuildingInstanceState {
   level: number;      // 1부터. requiresUnlock 건물은 0 = 잠김
   unlocked: boolean;
@@ -16,7 +21,8 @@ export interface PlayerState {
   buildings: Record<string, BuildingInstanceState>;
   selectedDevPath: string | null;
   research: Record<string, number>; // nodeId → 현재 레벨 (0 = 미투자)
-  hatcheryQueue: string[];          // 다음 준비기간에 무료 추가될 defId 목록
+  hatcherySlot:  HatcheryEntry | null;  // 현재 부화 중인 유닛 (1턴 후 돌연변이로 등장)
+  hatcheryQueue: HatcheryEntry[];       // 다음 준비기간에 무료 추가될 돌연변이 목록
   // 파생값 (updateDerived 후 최신 유지)
   unitCap: number;
   maxTier: number;
@@ -39,6 +45,7 @@ export function createPlayerState(): PlayerState {
     },
     selectedDevPath: null,
     research: {},
+    hatcherySlot:  null,
     hatcheryQueue: [],
     unitCap: CONFIG.capacity.start,
     maxTier: 1,

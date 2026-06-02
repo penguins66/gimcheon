@@ -55,14 +55,23 @@ export interface ResearchTreeDef {
 }
 
 // ── 상태이상 ───────────────────────────────────────────────────────────────
-export type StatusEffectType = 'frenzy' | 'statBuff';
+// surfaced: 지하 유닛이 공격 시 2초간 지상 노출 (타겟 가능 상태)
+// poison  : 매 틱 maxHp% 감소 (value = 초당 % 피해량)
+export type StatusEffectType = 'frenzy' | 'statBuff' | 'surfaced' | 'poison';
 
 export interface StatusEffect {
   type:       StatusEffectType;
   remaining:  number;           // 남은 틱 수. -1 = 패시브 (별도 제거 필요)
-  tag?:       string;           // 패시브 식별자 (예: 'packLeader')
-  statBonus?: Partial<Stats>;   // statBuff 전용
+  tag?:       string;           // 식별자 (중복 방지·갱신용)
+  statBonus?: Partial<Stats>;   // 절대값 버프/디버프
+  statPct?:   Partial<Stats>;   // 비율 버프/디버프 (-0.20 = -20%)
+  value?:     number;           // poison: 초당 HP% 피해
 }
+
+// ── 유닛 역할 / 타겟 우선순위 ─────────────────────────────────────────────
+// role: ShopPanel 등 UI 표시용. targetPriority: 시뮬레이션 타겟 선택에 영향
+export type UnitRole = 'tank' | 'melee' | 'assassin' | 'ranged' | 'flyer' | 'underground';
+export type TargetPriority = 'nearest' | 'lowest_hp';
 
 // ── 유닛 정의 ─────────────────────────────────────────────────────────────
 export interface UnitDef {
@@ -75,6 +84,8 @@ export interface UnitDef {
   baseStats: Stats;
   radius: number;
   targeting: TargetingFlags;
+  role?: UnitRole;
+  targetPriority?: TargetPriority; // 기본: 'nearest'
   research?: ResearchTreeDef;
   visual: VisualDef;
   unlock?: UnlockCondition;
@@ -115,10 +126,23 @@ export interface RaceDef {
 import type { RngState } from './rng';
 export type { RngState };
 
+// ── 전투 이펙트 ───────────────────────────────────────────────────────────
+export type EffectType = 'slash' | 'impact';
+
+export interface BattleEffect {
+  type: EffectType;
+  x: number;            // 월드 좌표
+  y: number;
+  angle: number;        // 라디안
+  remaining: number;    // 남은 틱
+  maxDuration: number;  // 총 지속 틱
+}
+
 export interface SimState {
   tick: number;
   phase: 'battle' | 'overtime' | 'done';
   units: SimUnit[];
+  effects: BattleEffect[];
   rng: RngState;
   winner: 0 | 1 | 'draw' | null;
 }
@@ -141,4 +165,8 @@ export interface SimUnit {
   stackId: number;
   statusEffects: StatusEffect[];  // 현재 상태이상 목록
   unlockedAbilities: string[];    // 해금된 어빌리티 ID 목록
+  targetPriority: TargetPriority; // 타겟 선택 우선순위
+  attackAnim:      number;  // 공격 돌진 애니메이션 남은 틱 (0 = 정지)
+  hitFlash:        number;  // 피격 붉은 깜빡임 남은 틱 (0 = 정상)
+  indomitableUsed: boolean; // 불굴 어빌리티 발동 여부 (1회만)
 }

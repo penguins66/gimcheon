@@ -55,10 +55,10 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
   },
   hatchery: {
     id: 'hatchery', name: '부화장', icon: '🥚',
-    summary: '같은 종류 유닛 2기 → 1턴 후 복제체 생성',
+    summary: '유닛 1기 투입 → 1턴 후 능력치 강화된 돌연변이로 부화',
     requiresUnlock: true, unlockCost: 8,
     levels: [
-      { upgradeCost: 0, description: '같은 종류 유닛 2기를 넣고 1턴 후 복제체 1기 생성' },
+      { upgradeCost: 0, description: '유닛 1기를 투입하면 1턴 후 HP·ATK·DEF +20%의 돌연변이 귀환' },
     ],
   },
 };

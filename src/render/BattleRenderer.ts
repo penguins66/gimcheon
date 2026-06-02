@@ -1,4 +1,4 @@
-import type { SimState, SimUnit } from '../sim/types';
+import type { SimState, SimUnit, BattleEffect } from '../sim/types';
 import type { Grid } from '../game/Grid';
 import { getUnit } from '../data/units';
 import { drawUnitToken } from './visuals';
@@ -29,6 +29,7 @@ export class BattleRenderer {
     if (this.canvas.width !== nw || this.canvas.height !== nh) {
       this.canvas.width = nw; this.canvas.height = nh;
       this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.ctx.imageSmoothingEnabled = false;
     }
     const cw = w / this.grid.cols, ch = h / this.grid.rows;
     this.cell = Math.floor(Math.min(cw, ch));
@@ -53,7 +54,8 @@ export class BattleRenderer {
 
     this.drawGrid(w, h);
     this.drawZones(w);
-    state.units.filter((u) => u.hp > 0).forEach((u) => this.drawUnit(u, cell));
+    state.units.filter((u) => u.hp > 0).forEach((u) => this.drawUnit(u, cell, state));
+    this.drawEffects(state.effects, cell);
     this.drawHud(state, w);
   }
 
@@ -100,17 +102,63 @@ export class BattleRenderer {
     ctx.fillRect(ox, oy + aiRows * cell, grid.cols * cell, grid.playerRows * cell);
   }
 
-  private drawUnit(unit: SimUnit, cell: number): void {
+  private drawUnit(unit: SimUnit, cell: number, state: SimState): void {
     const { ctx, ox, oy } = this;
     const def = getUnit(unit.defId);
-    const cx = ox + unit.x * cell;
-    const cy = oy + unit.y * cell;
+
+    // ── 공격 돌진 오프셋 ──────────────────────────────────────────────
+    let lx = 0, ly = 0;
+    if (unit.attackAnim > 0 && unit.targetId !== null) {
+      const tgt = state.units.find((u) => u.id === unit.targetId);
+      if (tgt) {
+        const prog = 1 - unit.attackAnim / 6;
+        const lunge = Math.sin(prog * Math.PI) * 0.16 * cell;
+        const dx = tgt.x - unit.x, dy = tgt.y - unit.y;
+        const d = Math.sqrt(dx * dx + dy * dy) || 1;
+        lx = (dx / d) * lunge; ly = (dy / d) * lunge;
+      }
+    }
+
+    const cx = ox + unit.x * cell + lx;
+    const cy = oy + unit.y * cell + ly;
     const r = Math.min(cell * def.radius, cell * 0.44);
 
-    const hasFrenzy = unit.statusEffects.some((se) => se.type === 'frenzy');
+    const hasFrenzy   = unit.statusEffects.some((se) => se.type === 'frenzy');
     const hasPackBuff = unit.statusEffects.some((se) => se.tag === 'packLeader');
+    const isSurfaced  = unit.statusEffects.some((se) => se.type === 'surfaced');
+    const isUnderground = unit.layer === 'underground';
 
     ctx.save();
+
+    // ── 지하 유닛 처리 ─────────────────────────────────────────────────
+    if (isUnderground && !isSurfaced) {
+      // 미지상: 반투명 + 점선 링으로 "땅 속" 표현
+      ctx.globalAlpha = 0.35;
+      drawUnitToken(ctx, def, cx, cy, r, unit.owner);
+      ctx.globalAlpha = 1.0;
+      ctx.strokeStyle = '#88aaff';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+      return; // HP바·아이콘 생략 (무적 상태이므로)
+    }
+
+    if (isSurfaced && isUnderground) {
+      // 지상 노출: 주황 경고 링 (공격받을 수 있는 상태)
+      ctx.strokeStyle = '#ff9c44';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#ff9c44';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
     // 광란: 빨간 외곽 링
     if (hasFrenzy) {
       ctx.strokeStyle = '#ff3366';
@@ -118,7 +166,7 @@ export class BattleRenderer {
       ctx.shadowColor = '#ff3366';
       ctx.shadowBlur = 6;
       ctx.beginPath();
-      ctx.arc(cx, cy, r + 3, 0, Math.PI * 2);
+      ctx.arc(cx, cy, r + (isSurfaced ? 8 : 3), 0, Math.PI * 2);
       ctx.stroke();
       ctx.shadowBlur = 0;
     }
@@ -128,7 +176,7 @@ export class BattleRenderer {
       ctx.lineWidth = 1.5;
       ctx.setLineDash([3, 2]);
       ctx.beginPath();
-      ctx.arc(cx, cy, r + (hasFrenzy ? 6 : 3), 0, Math.PI * 2);
+      ctx.arc(cx, cy, r + (hasFrenzy ? 6 : 3) + (isSurfaced ? 5 : 0), 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -141,16 +189,72 @@ export class BattleRenderer {
     ctx.restore();
 
     // 상태이상 아이콘 (유닛 위)
-    if (hasFrenzy || hasPackBuff) {
+    const icons = [
+      hasFrenzy   ? '😵' : '',
+      hasPackBuff ? '👑' : '',
+      isSurfaced  ? '⚠️' : '',
+    ].filter(Boolean).join('');
+    if (icons) {
       ctx.font = `${Math.max(8, Math.floor(r * 0.9))}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
-      const icons = [hasFrenzy ? '😵' : '', hasPackBuff ? '👑' : ''].filter(Boolean).join('');
       ctx.fillText(icons, cx, cy - r - 3);
+    }
+
+    // ── 피격 붉은 깜빡임 ──────────────────────────────────────────────
+    if (unit.hitFlash > 0) {
+      ctx.save();
+      ctx.globalAlpha = (unit.hitFlash / 5) * 0.65;
+      ctx.fillStyle = '#ff1111';
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      ctx.restore();
     }
 
     // HP 바
     this.drawHpBar(cx, cy, r, unit);
+  }
+
+  // ── 전투 이펙트 ───────────────────────────────────────────────────────────
+  private drawEffects(effects: BattleEffect[], cell: number): void {
+    const { ctx, ox, oy } = this;
+    for (const e of effects) {
+      const ex = ox + e.x * cell;
+      const ey = oy + e.y * cell;
+      const t  = e.remaining / e.maxDuration; // 1→0 (fade out)
+      ctx.save();
+      ctx.globalAlpha = t;
+
+      if (e.type === 'slash') {
+        // 흰/노란 사선 3줄
+        ctx.strokeStyle = '#fff7a0';
+        ctx.lineWidth   = Math.max(1.5, cell * 0.045);
+        ctx.shadowColor = '#ffe566';
+        ctx.shadowBlur  = 5;
+        const len  = cell * 0.5;
+        const perp = e.angle + Math.PI / 2;
+        for (let i = -1; i <= 1; i++) {
+          const offX = Math.cos(perp) * i * cell * 0.09;
+          const offY = Math.sin(perp) * i * cell * 0.09;
+          ctx.beginPath();
+          ctx.moveTo(ex + offX - Math.cos(e.angle) * len / 2,
+                     ey + offY - Math.sin(e.angle) * len / 2);
+          ctx.lineTo(ex + offX + Math.cos(e.angle) * len / 2,
+                     ey + offY + Math.sin(e.angle) * len / 2);
+          ctx.stroke();
+        }
+      } else {
+        // 충격 링 (원거리/스킬)
+        const radius = cell * 0.35 * (2 - t);
+        ctx.strokeStyle = '#ffcc44';
+        ctx.lineWidth   = Math.max(1, cell * 0.06 * t);
+        ctx.shadowColor = '#ffcc44';
+        ctx.shadowBlur  = 8;
+        ctx.beginPath();
+        ctx.arc(ex, ey, radius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   }
 
   private drawHpBar(cx: number, cy: number, r: number, unit: SimUnit): void {
