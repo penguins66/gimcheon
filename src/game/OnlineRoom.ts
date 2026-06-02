@@ -112,6 +112,16 @@ export class OnlineRoom {
     await update(ref(this.db, '/'), upd);
   }
 
+  /** 준비완료 취소: ready=false, 배치 초기화, 씨드 삭제 (P0만) */
+  async cancelReady(): Promise<void> {
+    const upd: Record<string, unknown> = {
+      [`rooms/${this.code}/${this.myKey}/ready`]:      false,
+      [`rooms/${this.code}/${this.myKey}/placements`]: [],
+    };
+    if (this.myOwner === 0) upd[`rooms/${this.code}/seed`] = null;
+    await update(ref(this.db, '/'), upd);
+  }
+
   /** 정산 후 다음 턴 준비 (ready=false, 배치 초기화, 상태 저장) */
   async setUnready(ps: PlayerState): Promise<void> {
     const path = `rooms/${this.code}/${this.myKey}`;

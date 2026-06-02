@@ -25,7 +25,7 @@ import { calcIncome, applySettlement } from './game/Economy';
 import type { SimState }       from './sim/types';
 import type { PlayerState }    from './game/PlayerState';
 import { isFirebaseReady, getDB } from './firebase';
-import { OnlineRoom, applySnap } from './game/OnlineRoom';
+import { OnlineRoom } from './game/OnlineRoom';
 import type { RoomSnap }       from './game/OnlineRoom';
 
 // ── 게임 상태 ─────────────────────────────────────────────────────────────
@@ -107,6 +107,8 @@ waitEl.querySelector('#wait-cancel')!.addEventListener('click', () => {
   waitEl.style.display = 'none';
   onlineBattleArmed = false;
   gamePhase = 'prep';
+  // Firebase에 ready=false 기록 — 상대방이 먼저 ready여도 전투가 잘못 시작되지 않게
+  onlineRoom?.cancelReady().catch(console.error);
   showShopPanel();
   hud.el.style.display  = '';
   shop.el.style.display = '';
