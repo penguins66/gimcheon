@@ -1,6 +1,6 @@
 import type { PlayerState } from '../game/PlayerState';
 import { BUILDING_DEFS } from '../data/buildings';
-import { canUpgrade, upgradeCost } from '../game/PlayerState';
+import { canUpgrade, upgradeCost, canUpgradeEra, eraUpgradeCost, ERA_NAMES, ERA_STAT_MULTIPLIERS } from '../game/PlayerState';
 import { getUnit } from '../data/units';
 
 // 사이드바 컨텍스트 — 건물 상세/업그레이드
@@ -14,6 +14,7 @@ export class BuildingPanel {
     private onBack: () => void,
     private onHatcherySelect?: () => void,   // 부화장: 투입할 유닛 선택 모드
     private onHatcheryRetrieve?: () => void, // 부화장: 슬롯 유닛 회수
+    private onEraUpgrade?: () => void,       // 시대진화: 업그레이드
   ) {
     this.el = document.createElement('div');
     this.el.className = 'panel building-panel';
@@ -37,7 +38,14 @@ export class BuildingPanel {
   }
 
   private render(s: PlayerState): void {
-    const id     = this.buildingId;
+    const id = this.buildingId;
+
+    // ── 시대 진화 패널 (인간 전용) ──
+    if (id === 'eraEvolution') {
+      this.renderEra(s);
+      return;
+    }
+
     const bDef   = BUILDING_DEFS[id];
     const bState = s.buildings[id];
     if (!bDef || !bState) return;
@@ -109,6 +117,57 @@ export class BuildingPanel {
         this.onHatcheryRetrieve?.();
       });
     }
+  }
+
+  // ── 시대 진화 패널 ──────────────────────────────────────────────────────
+  private renderEra(s: PlayerState): void {
+    const era        = s.era ?? 1;
+    const isMax      = era >= 5;
+    const curName    = ERA_NAMES[era - 1] ?? `에라${era}`;
+    const nextName   = ERA_NAMES[era]     ?? '';
+    const cost       = isMax ? 0 : eraUpgradeCost(s);
+    const affordable = !isMax && canUpgradeEra(s);
+    const curMult    = ERA_STAT_MULTIPLIERS[era - 1] ?? 1.0;
+    const nextMult   = ERA_STAT_MULTIPLIERS[era]     ?? 1.0;
+
+    // 시대별 비용 한눈에 보기
+    const costTable =
+      `<div class="bp-effect-row" style="margin-top:6px;font-size:11px;color:var(--muted)">` +
+        `<span>진화 비용</span>` +
+        `<span>선사→철기 6💰 · 철기→중세 10💰 · 중세→근대 16💰 · 근대→현대 24💰</span>` +
+      `</div>`;
+
+    let html =
+      `<div class="bp-header">` +
+        `<button class="bp-back" id="bp-back">← 병력</button>` +
+        `<span class="bp-title">⏫ 시대 진화</span>` +
+        `<span class="bp-lv-badge">${curName}</span>` +
+      `</div>` +
+      `<div class="bp-section">` +
+        `<p class="bp-cur-label">현재 시대 — ${curName}</p>` +
+        `<div class="bp-effect-row"><span>HP·ATK·DEF 배수</span><span>×${curMult.toFixed(2)}</span></div>` +
+        costTable +
+      `</div>`;
+
+    if (isMax) {
+      html +=
+        `<div class="bp-section">` +
+          `<p class="bp-max-badge">✦ 현대 — 최고 시대 달성</p>` +
+        `</div>`;
+    } else {
+      html +=
+        `<div class="bp-upgrade-box ${affordable ? '' : 'unaffordable'}">` +
+          `<p class="bp-next-label">▶ 다음 시대 — ${nextName}</p>` +
+          `<p class="bp-desc">HP·ATK·DEF 배수 <b>×${nextMult.toFixed(2)}</b> (현재 ×${curMult.toFixed(2)})</p>` +
+          `<div class="bp-cost">진화 비용 <b>${cost}💰</b></div>` +
+          `<button class="bp-upg-btn" id="era-upg" ${affordable ? '' : 'disabled'}>⏫ 시대 진화</button>` +
+          `${!affordable ? `<p class="bp-lack">코인 부족 (보유: ${s.coins}💰)</p>` : ''}` +
+        `</div>`;
+    }
+
+    this.el.innerHTML = html;
+    this.el.querySelector('#bp-back')!.addEventListener('click', this.onBack);
+    this.el.querySelector('#era-upg')?.addEventListener('click', () => this.onEraUpgrade?.());
   }
 
   // ── 부화장 섹션 ────────────────────────────────────────────────────────

@@ -11,18 +11,20 @@ import { BuildingPanel }   from './ui/BuildingPanel';
 import { ResearchPanel }   from './ui/ResearchPanel';
 import { DevPathPanel }    from './ui/DevPathPanel';
 import { NATURE_UNITS, NATURE_BASE_UNITS } from './data/units/nature';
+import { HUMAN_UNITS, HUMAN_BASE_UNITS }   from './data/units/human';
 import { getRace }         from './data/races';
 import { NATURE_RACE }     from './data/races/nature';
+import { HUMAN_RACE }      from './data/races/human';
 import { getUnit }         from './data/units';
 import { createSimState, tick, SimPlacement } from './sim/Simulation';
 import { createAiPlacements }  from './ai/AiController';
 import {
-  createPlayerState, upgradeBuilding, updateDerived,
+  createPlayerState, upgradeBuilding, updateDerived, upgradeEra,
 } from './game/PlayerState';
 import { investStat, unlockAbility } from './game/Research';
 import type { ResearchStatKey } from './game/Research';
 import { calcIncome, applySettlement } from './game/Economy';
-import type { SimState }       from './sim/types';
+import type { SimState, RaceId } from './sim/types';
 import type { PlayerState }    from './game/PlayerState';
 import { isFirebaseReady, getDB } from './firebase';
 import { OnlineRoom } from './game/OnlineRoom';
@@ -42,6 +44,9 @@ let accumulator = 0;
 const MS_PER_TICK = 1000 / 30;
 let sellMode     = false;
 let hatcheryMode = false;
+
+// 선택된 종족
+let selectedRaceId: RaceId = 'nature';
 
 // 온라인 상태
 let onlineRoom:         OnlineRoom | null = null;
@@ -115,11 +120,11 @@ waitEl.querySelector('#wait-cancel')!.addEventListener('click', () => {
 });
 
 // ── 보드 · 플레이어 상태 ─────────────────────────────────────────────────
-const grid   = new Grid();
-const board0 = new Board(grid, getRace('nature'), 0);
-const board1 = new Board(grid, getRace('nature'), 1);
-let p0State: PlayerState = createPlayerState();
-let p1State: PlayerState = createPlayerState();
+const grid = new Grid();
+let board0 = new Board(grid, getRace('nature'), 0);
+let board1 = new Board(grid, getRace('nature'), 1);
+let p0State: PlayerState = createPlayerState('nature');
+let p1State: PlayerState = createPlayerState('nature');
 
 let playerState: PlayerState = p0State;
 let activeBoard:  Board       = board0;
@@ -152,7 +157,7 @@ shop.select(NATURE_BASE_UNITS[0].id);
 
 const buildingBar = new BuildingBar(bldBarHost, 'nature', (id) => {
   if (id === 'researchLab') showResearchPanel();
-  else if (id) showBuildingPanel(id);
+  else if (id) showBuildingPanel(id);   // 'eraEvolution' 포함
   else showShopPanel();
 });
 
@@ -170,11 +175,14 @@ const buildingPanel = new BuildingPanel(
   () => {
     if (!playerState.hatcherySlot) return;
     const { defId, mutationLevel } = playerState.hatcherySlot;
-    // 배치 불가 시 슬롯 유지 (코인 환불 없음 — 이미 구매한 유닛이므로)
     if (!placeInZone(activeBoard, defId, mutationLevel)) return;
     playerState.hatcherySlot = null;
     onPlayerStateChange();
     buildingPanel.refresh(playerState);
+  },
+  // 시대 진화 콜백
+  () => {
+    if (upgradeEra(playerState)) onPlayerStateChange();
   },
 );
 
@@ -223,7 +231,7 @@ function onPlayerStateChange(): void {
   buildingBar.refresh(playerState);
   buildingPanel.refresh(playerState);
   researchPanel.refresh(playerState);
-  shop.refresh(playerState.coins, playerState.maxTier, playerState.selectedDevPath);
+  shop.refresh(playerState.coins, playerState.maxTier, playerState.selectedDevPath, playerState.era);
   draw();
 }
 function hudRefresh(): void {
@@ -231,7 +239,7 @@ function hudRefresh(): void {
   hud.board = activeBoard;
   hud.setUnitCap(playerState.unitCap);
   hud.refresh();
-  shop.refresh(playerState.coins, playerState.maxTier, playerState.selectedDevPath);
+  shop.refresh(playerState.coins, playerState.maxTier, playerState.selectedDevPath, playerState.era);
   buildingBar.refresh(playerState);
 }
 
@@ -351,8 +359,9 @@ function activatePlayer(owner: 0 | 1): void {
       : '플레이어 2 · 위 4행에 유닛 배치 후 [전투시작] 클릭';
     hud.setBattleBtnText(owner === 0 ? '✔ 준비완료 →' : '⚔ 전투 시작');
   } else {
+    const raceName = getRace(selectedRaceId).name;
     phaseTag.textContent  = '준비기간';
-    topbarSub.textContent = '종족: 자연 · 그리드 7×8 · 아래 4행이 내 진영';
+    topbarSub.textContent = `종족: ${raceName} · 그리드 7×8 · 아래 4행이 내 진영`;
     hud.setBattleBtnText('⚔ 전투 시작');
   }
 
@@ -362,22 +371,59 @@ function activatePlayer(owner: 0 | 1): void {
   gridRenderer.draw();
 
   if (playerState.turn >= 7 && !playerState.selectedDevPath) {
-    devPathPanel.show(NATURE_RACE.devPaths, NATURE_UNITS, (pathId) => {
+    const race  = getRace(selectedRaceId);
+    const units = selectedRaceId === 'human' ? HUMAN_UNITS : NATURE_UNITS;
+    const note  = selectedRaceId === 'nature'
+      ? '선택 후 해당 유닛이 상점에 해금됩니다 · 한 칸 최대 3유닛 배치 가능'
+      : '선택 후 해당 유닛이 상점에 해금됩니다';
+    devPathPanel.show(race.devPaths, units, (pathId) => {
       playerState.selectedDevPath = pathId;
       activeBoard.devPathChosen   = true;
       onPlayerStateChange();
-    });
+    }, playerState.era, note);
   }
+}
+
+// ── 종족 초기화 (모드 선택 후 호출) ─────────────────────────────────────
+function initRace(raceId: RaceId): void {
+  selectedRaceId = raceId;
+  const race   = getRace(raceId);
+  const units  = raceId === 'human' ? HUMAN_UNITS : NATURE_UNITS;
+  const baseU  = raceId === 'human' ? HUMAN_BASE_UNITS : NATURE_BASE_UNITS;
+
+  // 보드 재생성 (종족별 cellCapacity)
+  board0 = new Board(grid, race, 0);
+  board1 = new Board(grid, race, 1);
+  gridRenderer.board          = board0;
+  gridRenderer.secondaryBoard = null;
+  hud.board = board0;
+  activeBoard = board0;
+
+  // 상점 재초기화
+  shop.reset(units, race.name);
+  shop.select(baseU[0].id);
+
+  // 건물바 재초기화
+  buildingBar.resetRace(raceId);
+
+  // 연구 패널 재초기화
+  researchPanel.setUnits(units);
+
+  // 플레이어 상태 재초기화
+  p0State = createPlayerState(raceId);
+  p1State = createPlayerState(raceId);
+  playerState = p0State;
 }
 
 // ── 공통 전투 시작 (시뮬레이션 생성 + 루프) ─────────────────────────────
 function launchBattle(
   p0Placements: SimPlacement[], p1Placements: SimPlacement[],
-  p0Research: Record<string, number>, p1Research: Record<string, number>,
+  p0Research: Record<string, number>, p0Era: number,
+  p1Research: Record<string, number>, p1Era: number,
   seed: number,
 ): void {
   try {
-    simState = createSimState(p0Placements, p1Placements, grid, seed, p0Research, p1Research);
+    simState = createSimState(p0Placements, p1Placements, grid, seed, p0Research, p0Era, p1Research, p1Era);
   } catch (err) {
     console.error('[launchBattle]', err);
     gamePhase = 'prep'; phaseTag.textContent = '준비기간'; return;
@@ -431,7 +477,12 @@ function startBattle(): void {
         units.map(u => ({ cellId, defId: u.defId, mutationLevel: u.mutationLevel })))
     : createAiPlacements(grid, p0State.turn);
 
-  launchBattle(p0Pl, p1Pl, p0State.research, gameMode === '2p' ? p1State.research : {}, Date.now() | 0);
+  launchBattle(
+    p0Pl, p1Pl,
+    p0State.research, p0State.era,
+    gameMode === '2p' ? p1State.research : {}, gameMode === '2p' ? p1State.era : 1,
+    Date.now() | 0,
+  );
 }
 
 // ── 온라인: 준비완료 버튼 ────────────────────────────────────────────────
@@ -503,7 +554,12 @@ function startOnlineBattle(snap: RoomSnap): void {
     defId:  p.defId, mutationLevel: p.mutationLevel ?? 0,
   }));
 
-  launchBattle(p0Pl, p1Pl, snap.p0!.research, snap.p1!.research, snap.seed!);
+  launchBattle(
+    p0Pl, p1Pl,
+    snap.p0!.research, snap.p0!.era ?? 1,
+    snap.p1!.research, snap.p1!.era ?? 1,
+    snap.seed!,
+  );
 }
 
 // ── 정산 ─────────────────────────────────────────────────────────────────
@@ -697,7 +753,7 @@ function fullReset(): void {
   onlineBattleArmed = false;
   waitEl.style.display = 'none';
 
-  p0State = createPlayerState(); p1State = createPlayerState();
+  p0State = createPlayerState(selectedRaceId); p1State = createPlayerState(selectedRaceId);
   playerState = p0State; activeBoard = board0; prepOwner = 0;
   board0.clear(); board0.devPathChosen = false;
   board1.clear(); board1.devPathChosen = false;
@@ -737,18 +793,50 @@ function showModeSelect(): void {
 
   el.querySelector('#mode-1p')!.addEventListener('click', () => {
     gameMode = '1p'; el.remove();
-    activatePlayer(0); showTutorial();
+    showRaceSelect(() => { activatePlayer(0); showTutorial(); });
   });
   el.querySelector('#mode-2p')!.addEventListener('click', () => {
-    gameMode = '2p'; p1State = createPlayerState(); el.remove();
-    activatePlayer(0);
-    gridRenderer.secondaryBoard = board1;
-    showTutorial();
+    gameMode = '2p'; el.remove();
+    showRaceSelect(() => {
+      p1State = createPlayerState(selectedRaceId);
+      activatePlayer(0);
+      gridRenderer.secondaryBoard = board1;
+      showTutorial();
+    });
   });
   el.querySelector('#mode-online')!.addEventListener('click', () => {
     if (!fbReady) return;
     gameMode = 'online'; el.remove();
     showOnlineLobby();
+  });
+}
+
+// ── 종족 선택 오버레이 ────────────────────────────────────────────────────
+function showRaceSelect(onDone: () => void): void {
+  const el = document.createElement('div');
+  el.className = 'mode-select-overlay';
+  el.innerHTML = `
+    <div class="mode-select-box">
+      <h2 class="mode-select-title">⚔️ 종족 선택</h2>
+      <p class="mode-select-sub">원하는 종족을 선택하세요</p>
+      <button class="mode-btn" id="race-nature">
+        🌿 자연<span>인해전술 · 부화장 · 겹침 배치</span>
+      </button>
+      <button class="mode-btn" id="race-human">
+        🏛️ 인간<span>시대 진화 · 첨단 or 마법 발전</span>
+      </button>
+    </div>`;
+  document.body.appendChild(el);
+
+  el.querySelector('#race-nature')!.addEventListener('click', () => {
+    el.remove();
+    initRace('nature');
+    onDone();
+  });
+  el.querySelector('#race-human')!.addEventListener('click', () => {
+    el.remove();
+    initRace('human');
+    onDone();
   });
 }
 
@@ -798,8 +886,9 @@ function showOnlineLobby(): void {
       room.listen((snap) => {
         if (snap.p1?.connected) {
           el.remove();
-          // P1의 초기 상태로 내 playerState 업데이트는 없음 (각자 독립)
-          lobbyEnterGame(room);
+          // 종족 선택 후 게임 입장
+          el.remove();
+          showRaceSelect(() => lobbyEnterGame(room));
         }
       });
     } catch (e) {
@@ -817,7 +906,7 @@ function showOnlineLobby(): void {
       if (!room) { setStatus('방을 찾을 수 없거나 이미 가득 찼습니다', '#ff6b6b'); return; }
       onlineRoom = room;
       el.remove();
-      lobbyEnterGame(room);
+      showRaceSelect(() => lobbyEnterGame(room));
     } catch (e) {
       setStatus('입장 실패: ' + String(e), '#ff6b6b');
     }
@@ -832,7 +921,7 @@ function showOnlineLobby(): void {
 
 function lobbyEnterGame(room: OnlineRoom): void {
   gameMode = 'online';
-  p0State = createPlayerState();
+  p0State = createPlayerState(selectedRaceId);
   playerState = p0State;
   activeBoard = board0;
   gridRenderer.board = board0;

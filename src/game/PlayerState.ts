@@ -1,5 +1,12 @@
 import { CONFIG } from '../config';
 import { BUILDING_DEFS } from '../data/buildings';
+import type { RaceId } from '../sim/types';
+
+// ── 인간 종족 시대 상수 ────────────────────────────────────────────────────
+export const ERA_NAMES        = ['선사', '철기', '중세', '근대', '현대'] as const;
+export const ERA_UPGRADE_COSTS = [6, 10, 16, 24]; // 1→2, 2→3, 3→4, 4→5 비용
+// 스탯 배수 (철기=era2=×1.0 기준). HP·ATK·DEF에 적용.
+export const ERA_STAT_MULTIPLIERS = [0.75, 1.0, 1.25, 1.55, 1.90];
 
 export interface HatcheryEntry {
   defId:         string;
@@ -23,13 +30,27 @@ export interface PlayerState {
   research: Record<string, number>; // nodeId → 현재 레벨 (0 = 미투자)
   hatcherySlot:  HatcheryEntry | null;  // 현재 부화 중인 유닛 (1턴 후 돌연변이로 등장)
   hatcheryQueue: HatcheryEntry[];       // 다음 준비기간에 무료 추가될 돌연변이 목록
+  // 인간 종족 시대 (1~5). 자연/마계는 항상 1 (무시)
+  era: number;
   // 파생값 (updateDerived 후 최신 유지)
   unitCap: number;
   maxTier: number;
   gemsPerTurn: number;
 }
 
-export function createPlayerState(): PlayerState {
+export function createPlayerState(raceId: RaceId = 'nature'): PlayerState {
+  const buildings: Record<string, BuildingInstanceState> = {
+    production:  { level: 1, unlocked: true  },
+    researchLab: { level: 1, unlocked: true  },
+    capacity:    { level: 1, unlocked: true  },
+  };
+  if (raceId === 'human') {
+    // 인간: 부화장 없음 (eraEvolution은 buildings에 없고 era 필드로 관리)
+  } else {
+    // 자연/마계: 부화장
+    buildings['hatchery'] = { level: 0, unlocked: false };
+  }
+
   const s: PlayerState = {
     coins: CONFIG.economy.startCoins,
     gems: 0,
@@ -37,16 +58,12 @@ export function createPlayerState(): PlayerState {
     turn: 1,
     consecutiveWins: 0,
     consecutiveLosses: 0,
-    buildings: {
-      production:  { level: 1, unlocked: true  },
-      researchLab: { level: 1, unlocked: true  },
-      capacity:    { level: 1, unlocked: true  },
-      hatchery:    { level: 0, unlocked: false },
-    },
+    buildings,
     selectedDevPath: null,
     research: {},
     hatcherySlot:  null,
     hatcheryQueue: [],
+    era: 1,  // 인간: 1=선사. 자연/마계: 1 고정(무시)
     unitCap: CONFIG.capacity.start,
     maxTier: 1,
     gemsPerTurn: CONFIG.research.baseGemsPerTurn,
@@ -112,4 +129,22 @@ export function upgradeCost(s: PlayerState, buildingId: string): number {
   const nextIdx = bState.level;
   if (nextIdx >= bDef.levels.length) return Infinity;
   return bDef.levels[nextIdx].upgradeCost;
+}
+
+// ── 인간 종족: 시대 진화 ──────────────────────────────────────────────────
+export function eraUpgradeCost(s: PlayerState): number {
+  if (s.era >= 5) return Infinity;
+  return ERA_UPGRADE_COSTS[s.era - 1];
+}
+
+export function canUpgradeEra(s: PlayerState): boolean {
+  if (s.era >= 5) return false;
+  return s.coins >= eraUpgradeCost(s);
+}
+
+export function upgradeEra(s: PlayerState): boolean {
+  if (!canUpgradeEra(s)) return false;
+  s.coins -= eraUpgradeCost(s);
+  s.era++;
+  return true;
 }

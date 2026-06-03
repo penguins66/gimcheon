@@ -31,6 +31,11 @@ export class ResearchPanel {
     container.appendChild(this.el);
   }
 
+  /** 종족 전환 시 연구 대상 유닛 교체 */
+  setUnits(units: UnitDef[]): void {
+    this.units = units;
+  }
+
   show(s: PlayerState): void {
     this.el.style.display = '';
     this.render(s);

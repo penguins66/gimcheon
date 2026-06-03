@@ -12,6 +12,7 @@ export interface OnlinePlayerSnap {
   ready:             boolean;
   placements:        Array<{ cellId: number; defId: string; mutationLevel: number }>;
   research:          Record<string, number>;
+  era:               number;   // 인간 종족 시대 (1~5). 자연은 1.
   coins:             number;
   gems:              number;
   lives:             number;
@@ -41,6 +42,7 @@ function toSnap(
   return {
     connected: true, ready, placements,
     research: { ...ps.research },
+    era: ps.era ?? 1,
     coins: ps.coins, gems: ps.gems, lives: ps.lives, turn: ps.turn,
     consecutiveWins:   ps.consecutiveWins,
     consecutiveLosses: ps.consecutiveLosses,
@@ -127,6 +129,7 @@ export class OnlineRoom {
     const path = `rooms/${this.code}/${this.myKey}`;
     const data: Partial<OnlinePlayerSnap> = {
       ready: false, placements: [],
+      era: ps.era ?? 1,
       coins: ps.coins, gems: ps.gems, lives: ps.lives, turn: ps.turn,
       consecutiveWins: ps.consecutiveWins, consecutiveLosses: ps.consecutiveLosses,
       buildings: JSON.parse(JSON.stringify(ps.buildings)),

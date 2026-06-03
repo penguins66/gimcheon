@@ -244,6 +244,15 @@ body {
   transition: border-color .15s, background .15s, transform .1s;
 }
 .devpath-choice:hover { border-color: var(--accent-2); background: #122230; transform: translateY(-2px); }
+/* 잠긴 발전 경로 */
+.devpath-choice-locked { opacity: .45; cursor: not-allowed; position: relative; }
+.devpath-choice-locked:hover { border-color: var(--line); background: var(--panel-2); transform: none; }
+.devpath-lock-overlay {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: #ff9944;
+  background: rgba(0,0,0,.35); border-radius: 10px; z-index: 2;
+  pointer-events: none;
+}
 
 .devpath-choice-icon { font-size: 28px; line-height: 1; text-align: center; }
 .devpath-choice-title { font-size: 16px; font-weight: 800; text-align: center; }

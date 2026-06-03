@@ -1,15 +1,26 @@
 import type { Stats, UnitDef } from '../sim/types';
 import { statNodeId } from './Research';
+import { ERA_STAT_MULTIPLIERS } from './PlayerState';
 
-// 실효 스탯 산출: 기본 스탯 + 연구(M4) + 돌연변이 보정.
+// 실효 스탯 산출: 기본 스탯 + 시대(인간) + 연구(M4) + 돌연변이 보정.
 // research: playerState.research ('{unitId}.stat' → 현재 레벨). 없으면 기본값만 반환.
 // mutationLevel: 부화장 돌연변이 레벨 (0 = 기본, 1+ = 각 레벨당 HP·ATK·DEF +20%, AS +5%)
+// era: 인간 종족 시대 (1~5). 자연/마계는 무시. baseStats는 era 2(철기) 기준.
 export function effectiveStats(
   def: UnitDef,
   research?: Record<string, number>,
   mutationLevel = 0,
+  era = 1,
 ): Stats {
   const s: Stats = { ...def.baseStats };
+
+  // 인간 종족 시대 배수: HP·ATK·DEF만 스케일 (AS·MS·RNG 고정)
+  if (def.raceId === 'human') {
+    const mult = ERA_STAT_MULTIPLIERS[era - 1] ?? 1.0;
+    s.hp      = Math.round(s.hp      * mult);
+    s.atk     = Math.round(s.atk     * mult);
+    s.defense = Math.round(s.defense * mult);
+  }
 
   if (research && def.research) {
     const tree = def.research;

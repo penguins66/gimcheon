@@ -61,6 +61,14 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
       { upgradeCost: 0, description: '유닛 1기를 투입하면 1턴 후 HP·ATK·DEF +20%의 돌연변이 귀환' },
     ],
   },
+
+  // 인간 종족 전용: 시대 진화 (BuildingPanel에서 별도 렌더)
+  eraEvolution: {
+    id: 'eraEvolution', name: '시대 진화', icon: '⏫',
+    summary: '코인을 지불해 시대를 진화 — 모든 유닛 HP·ATK·DEF 상승',
+    requiresUnlock: false, unlockCost: 0,
+    levels: [], // 레벨 시스템 미사용 — era 필드로 직접 관리
+  },
 };
 
 // 종족별 건물 순서 (건물바 표시 순)

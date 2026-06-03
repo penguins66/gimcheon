@@ -29,7 +29,9 @@ export function createSimState(
   grid: Grid,
   seed: number,
   p0Research: Record<string, number> = {},
+  p0Era = 1,
   p1Research: Record<string, number> = {},
+  p1Era = 1,
 ): SimState {
   const rng = seedRng(seed);
   const units: SimUnit[] = [];
@@ -39,11 +41,12 @@ export function createSimState(
     placements: SimPlacement[],
     owner: 0 | 1,
     research?: Record<string, number>,
+    era = 1,
   ) => {
     for (const { cellId, defId, mutationLevel = 0 } of placements) {
       const def = getUnit(defId);
       const { col, row } = grid.coord(cellId);
-      const stats = effectiveStats(def, research, mutationLevel);
+      const stats = effectiveStats(def, research, mutationLevel, era);
       units.push({
         id: nextId++,
         owner,
@@ -70,8 +73,8 @@ export function createSimState(
     }
   };
 
-  addPlacements(p0, 0, p0Research);
-  addPlacements(p1, 1, p1Research); // 2P모드에서는 p1Research도 적용
+  addPlacements(p0, 0, p0Research, p0Era);
+  addPlacements(p1, 1, p1Research, p1Era);
 
   return { tick: 0, phase: 'battle', units, effects: [], rng, winner: null };
 }
