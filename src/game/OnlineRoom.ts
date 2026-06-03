@@ -69,15 +69,17 @@ export function applySnap(ps: PlayerState, snap: OnlinePlayerSnap): void {
 }
 
 function defaultSnap(): OnlinePlayerSnap {
+  // 방 생성/입장 시점에는 종족이 미결정 → 공통 건물 3개만 포함.
+  // 실제 종족별 상태는 setReady() 호출 시 toSnap()으로 완전히 덮어씀.
   return {
     connected: true, ready: false, placements: [], research: {},
+    era: 1,  // 기본값; 인간=선사, 자연=무시
     coins: 10, gems: 0, lives: 6, turn: 1,
     consecutiveWins: 0, consecutiveLosses: 0,
     buildings: {
-      production:  { level: 1, unlocked: true  },
-      researchLab: { level: 1, unlocked: true  },
-      capacity:    { level: 1, unlocked: true  },
-      hatchery:    { level: 0, unlocked: false },
+      production:  { level: 1, unlocked: true },
+      researchLab: { level: 1, unlocked: true },
+      capacity:    { level: 1, unlocked: true },
     },
     selectedDevPath: null, hatcheryQueue: [], hatcherySlot: null,
   };
@@ -124,21 +126,13 @@ export class OnlineRoom {
     await update(ref(this.db, '/'), upd);
   }
 
-  /** 정산 후 다음 턴 준비 (ready=false, 배치 초기화, 상태 저장) */
+  /** 정산 후 다음 턴 준비 (ready=false, 배치 초기화, 현 상태 저장) */
   async setUnready(ps: PlayerState): Promise<void> {
-    const path = `rooms/${this.code}/${this.myKey}`;
-    const data: Partial<OnlinePlayerSnap> = {
-      ready: false, placements: [],
-      era: ps.era ?? 1,
-      coins: ps.coins, gems: ps.gems, lives: ps.lives, turn: ps.turn,
-      consecutiveWins: ps.consecutiveWins, consecutiveLosses: ps.consecutiveLosses,
-      buildings: JSON.parse(JSON.stringify(ps.buildings)),
-      selectedDevPath: ps.selectedDevPath,
-      hatcheryQueue: [...ps.hatcheryQueue],
-      hatcherySlot: ps.hatcherySlot ? { ...ps.hatcherySlot } : null,
+    // toSnap(ps, [], false) = setReady와 동일 직렬화, 단 ready:false·placements:[]
+    const snapData = toSnap(ps, [], false);
+    const upd: Record<string, unknown> = {
+      [`rooms/${this.code}/${this.myKey}`]: snapData,
     };
-    const upd: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(data)) upd[`${path}/${k}`] = v;
     if (this.myOwner === 0) upd[`rooms/${this.code}/seed`] = null;
     await update(ref(this.db, '/'), upd);
   }

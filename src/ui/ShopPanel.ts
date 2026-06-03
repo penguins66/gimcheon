@@ -59,7 +59,7 @@ export class ShopPanel {
         `<span class="emoji" id="emoji-${u.id}">${u.visual.emoji ?? '⬤'}</span>` +
         `<span class="uinfo">` +
           `<span class="uname"><span id="uname-${u.id}">${u.name}</span><span class="ucost">${u.cost}💰</span></span>` +
-          `<span class="ustats" id="ustats-${u.id}">HP ${u.baseStats.hp} · ATK ${u.baseStats.atk} · ${layerLabel(u.layer)}</span>` +
+          `<span class="ustats" id="ustats-${u.id}">HP ${u.baseStats.hp} · ATK ${u.baseStats.atk} · DEF ${u.baseStats.defense} · ${layerLabel(u.layer)}</span>` +
         `</span>` +
         `<span class="utier-badge" id="tier-${u.id}">T${u.tier}</span>`;
       b.addEventListener('click', () => {
@@ -100,9 +100,10 @@ export class ShopPanel {
         // 스탯도 era 기준으로 갱신 (기본유닛만: 발전유닛은 era 스케일 없음)
         if (statsEl && u.raceId === 'human' && !u.unlock) {
           const mult = ERA_STAT_MULTIPLIERS[eraIdx] ?? 1.0;
-          const hp   = Math.round(u.baseStats.hp  * mult);
-          const atk  = Math.round(u.baseStats.atk * mult);
-          statsEl.textContent = `HP ${hp} · ATK ${atk} · ${layerLabel(u.layer)}`;
+          const hp  = Math.round(u.baseStats.hp      * mult);
+          const atk = Math.round(u.baseStats.atk     * mult);
+          const def = Math.round(u.baseStats.defense  * mult);
+          statsEl.textContent = `HP ${hp} · ATK ${atk} · DEF ${def} · ${layerLabel(u.layer)}`;
         }
       }
 

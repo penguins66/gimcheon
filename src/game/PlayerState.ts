@@ -44,10 +44,8 @@ export function createPlayerState(raceId: RaceId = 'nature'): PlayerState {
     researchLab: { level: 1, unlocked: true  },
     capacity:    { level: 1, unlocked: true  },
   };
-  if (raceId === 'human') {
-    // 인간: 부화장 없음 (eraEvolution은 buildings에 없고 era 필드로 관리)
-  } else {
-    // 자연/마계: 부화장
+  if (raceId !== 'human') {
+    // 자연/마계: 부화장. 인간은 era 필드로 시대 관리 (eraEvolution)
     buildings['hatchery'] = { level: 0, unlocked: false };
   }
 

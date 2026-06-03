@@ -882,11 +882,10 @@ function showOnlineLobby(): void {
           <p style="color:var(--muted);font-size:12px">상대방이 입장하면 자동으로 시작됩니다</p>
           <p id="lobby-wait-status" style="color:var(--accent);font-size:13px">⏳ 상대방 대기 중...</p>
         </div>`;
-      // 상대방 입장 감지
+      // 상대방 입장 감지 (1회만 반응하도록 즉시 dispose 후 재리슨은 lobbyEnterGame에서)
       room.listen((snap) => {
         if (snap.p1?.connected) {
-          el.remove();
-          // 종족 선택 후 게임 입장
+          room.dispose();
           el.remove();
           showRaceSelect(() => lobbyEnterGame(room));
         }

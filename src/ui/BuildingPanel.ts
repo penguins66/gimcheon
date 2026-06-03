@@ -1,6 +1,6 @@
 import type { PlayerState } from '../game/PlayerState';
 import { BUILDING_DEFS } from '../data/buildings';
-import { canUpgrade, upgradeCost, canUpgradeEra, eraUpgradeCost, ERA_NAMES, ERA_STAT_MULTIPLIERS } from '../game/PlayerState';
+import { canUpgrade, upgradeCost, canUpgradeEra, eraUpgradeCost, ERA_NAMES, ERA_UPGRADE_COSTS, ERA_STAT_MULTIPLIERS } from '../game/PlayerState';
 import { getUnit } from '../data/units';
 
 // 사이드바 컨텍스트 — 건물 상세/업그레이드
@@ -130,11 +130,13 @@ export class BuildingPanel {
     const curMult    = ERA_STAT_MULTIPLIERS[era - 1] ?? 1.0;
     const nextMult   = ERA_STAT_MULTIPLIERS[era]     ?? 1.0;
 
-    // 시대별 비용 한눈에 보기
+    // 시대별 비용 한눈에 보기 (ERA_UPGRADE_COSTS 상수에서 동적 생성)
+    const costTableStr = ERA_UPGRADE_COSTS
+      .map((c, i) => `${ERA_NAMES[i]}→${ERA_NAMES[i + 1]} ${c}💰`)
+      .join(' · ');
     const costTable =
       `<div class="bp-effect-row" style="margin-top:6px;font-size:11px;color:var(--muted)">` +
-        `<span>진화 비용</span>` +
-        `<span>선사→철기 6💰 · 철기→중세 10💰 · 중세→근대 16💰 · 근대→현대 24💰</span>` +
+        `<span>진화 비용</span><span>${costTableStr}</span>` +
       `</div>`;
 
     let html =
